@@ -1,0 +1,105 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+    <actions/>
+    <description></description>
+    <keepDependencies>false</keepDependencies>
+    <properties>
+        <jenkins.model.BuildDiscarderProperty>
+            <strategy class="hudson.tasks.LogRotator">
+                <daysToKeep>30</daysToKeep>
+                <numToKeep>10</numToKeep>
+                <artifactDaysToKeep>30</artifactDaysToKeep>
+                <artifactNumToKeep>10</artifactNumToKeep>
+            </strategy>
+        </jenkins.model.BuildDiscarderProperty>
+    </properties>
+    <scm class="hudson.scm.NullSCM"/>
+    <canRoam>true</canRoam>
+    <disabled>false</disabled>
+    <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+    <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+    <triggers/>
+    <concurrentBuild>false</concurrentBuild>
+    <builders>
+        <org.jenkinsci.plugins.workflow.job.WorkflowJob plugin="workflow-job@2.42">
+            <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition">
+                <script>
+                    pipeline {
+                        agent any
+
+                        environment {
+                            DOCKER_REGISTRY = "kodal035"
+                            DOCKER_CREDENTIALS_ID = "Buca2035d1"
+                        }
+
+                        stages {
+                            stage('Checkout') {
+                                steps {
+                                    checkout scm
+                                }
+                            }
+
+                            stage('Build and Test Product Catalogue') {
+                                steps {
+                                    dir('productcatalogue') {
+                                        sh 'mvn clean package'
+                                        sh 'docker build -t ${DOCKER_REGISTRY}/productcatalogue:latest .'
+                                    }
+                                }
+                            }
+
+                            stage('Build and Test Shopfront') {
+                                steps {
+                                    dir('shopfront') {
+                                        sh 'mvn clean package'
+                                        sh 'docker build -t ${DOCKER_REGISTRY}/shopfront:latest .'
+                                    }
+                                }
+                            }
+
+                            stage('Build and Test Stock Manager') {
+                                steps {
+                                    dir('stockmanager') {
+                                        sh 'mvn clean package'
+                                        sh 'docker build -t ${DOCKER_REGISTRY}/stockmanager:latest .'
+                                    }
+                                }
+                            }
+
+                            stage('Push Docker Images') {
+                                steps {
+                                    script {
+                                        withDockerRegistry([url: "${DOCKER_REGISTRY}", credentialsId: "${DOCKER_CREDENTIALS_ID}"]) {
+                                            sh 'docker push ${DOCKER_REGISTRY}/productcatalogue:latest'
+                                            sh 'docker push ${DOCKER_REGISTRY}/shopfront:latest'
+                                            sh 'docker push ${DOCKER_REGISTRY}/stockmanager:latest'
+                                        }
+                                    }
+                                }
+                            }
+
+                            stage('Deploy to Kubernetes') {
+                                steps {
+                                    script {
+                                        sh 'kubectl apply -f kubernetes/productcatalogue-service.yaml'
+                                        sh 'kubectl apply -f kubernetes/shopfront-service.yaml'
+                                        sh 'kubectl apply -f kubernetes/stockmanager-service.yaml'
+                                    }
+                                }
+                            }
+                        }
+
+                        post {
+                            always {
+                                cleanWs()
+                            }
+                        }
+                    }
+                </script>
+                <sandbox>true</sandbox>
+            </definition>
+        </org.jenkinsci.plugins.workflow.job.WorkflowJob>
+    </builders>
+    <publishers/>
+    <buildWrappers/>
+</project>
